@@ -1,0 +1,12 @@
+{
+    "patch_date": "2026-05-28 13:07:20",
+    "false_positives_fixed": [
+        "DAN name context",
+        "override in code",
+        "ignore in data context",
+        "no restrictions innocent"
+    ],
+    "patch_samples": 79,
+    "base_model": "compiled_security_model_distilbert_v2",
+    "patched_model": "compiled_security_model_distilbert_v3"
+}

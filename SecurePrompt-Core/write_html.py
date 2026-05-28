@@ -1,0 +1,229 @@
+import os
+
+content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SecurePrompt Web UI</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#080F08; --fg:#00FF41; --fg-muted:#7BAF7B; --panel-bg:#0D1A0D; --border:rgba(0,255,65,0.3); --red:#EF4444; --amber:#F59E0B; --yellow:#EAB308; --cyan:#06B6D4; --font-body:'IBM Plex Sans',sans-serif; --font-mono:'JetBrains Mono',monospace; --font-head:'Orbitron',sans-serif; }
+    * { box-sizing: border-box; }
+    body { background: var(--bg); color: var(--fg); font-family: var(--font-body); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); font-family: var(--font-head); }
+    .logo { font-size: 24px; font-weight: 700; letter-spacing: 2px; }
+    .api-status { display: flex; align-items: center; gap: 12px; font-size: 14px; font-family: var(--font-mono); }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--red); transition: 0.3s; }
+    .dot.online { background: var(--fg); box-shadow: 0 0 10px var(--fg); animation: pulse 2s infinite ease-in-out; }
+    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    main { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 280px; border-right: 1px solid var(--border); background: var(--panel-bg); padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+    .sidebar-title { font-family: var(--font-head); font-size: 14px; margin-bottom: 8px; color: var(--fg-muted); }
+    .left-panel { flex: 1; border-right: 1px solid var(--border); padding: 32px; display: flex; flex-direction: column; position: relative; }
+    .right-panel { flex: 1; padding: 32px; display: flex; flex-direction: column; position: relative; background: var(--panel-bg); }
+    textarea { flex: 1; background: transparent; border: 1px solid var(--border); color: var(--fg); font-family: var(--font-mono); font-size: 16px; padding: 16px; resize: none; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+    textarea:focus { border-color: var(--fg); box-shadow: 0 0 10px rgba(0,255,65,0.1); }
+    .char-counter { font-family: var(--font-mono); font-size: 12px; text-align: right; padding: 8px 0 24px 0; color: var(--fg-muted); transition: color 0.2s; }
+    button { background: var(--fg); color: var(--bg); border: none; padding: 18px; font-family: var(--font-head); font-size: 16px; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: 0.2s; }
+    button:hover:not(:disabled) { transform: scale(1.01); background: #00DB38; }
+    button:disabled { background: var(--bg); border: 1px solid var(--border); color: var(--fg-muted); cursor: not-allowed; }
+    .state { display: none; flex: 1; flex-direction: column; align-items: center; justify-content: center; }
+    .state.active { display: flex; }
+    .scan-line { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--fg); box-shadow: 0 0 20px var(--fg); animation: scan 1.5s linear infinite; z-index: 10; display: none; pointer-events: none; }
+    @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+    .verdict-header { font-family: var(--font-head); font-size: 64px; font-weight: 700; letter-spacing: 4px; margin-bottom: 48px; text-align: center; }
+    .verdict-safe { color: var(--fg); text-shadow: 0 0 30px rgba(0,255,65,0.4); }
+    .verdict-malicious { color: var(--red); text-shadow: 0 0 30px rgba(239,68,68,0.6); animation: shake 0.4s ease-in-out; }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+    .metrics-container { display: flex; gap: 24px; width: 100%; justify-content: space-between; margin-bottom: auto; }
+    .metric-card { flex: 1; border: 1px solid var(--border); padding: 20px; text-align: center; background: rgba(0, 255, 65, 0.02); border-radius: 4px; }
+    .metric-val { font-family: var(--font-mono); font-size: 28px; margin-bottom: 8px; font-weight: bold; }
+    .metric-lbl { font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 1px; }
+    .pill { font-family: var(--font-body); font-size: 12px; padding: 4px 12px; border-radius: 99px; font-weight: bold; color: #000; display: inline-block; }
+    .timeline-title { width: 100%; font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); margin-bottom: 12px; border-bottom: 1px solid rgba(0,255,65,0.1); padding-bottom: 4px; }
+    .timeline-wrapper { width: 100%; height: 80px; display: flex; align-items: flex-end; gap: 6px; }
+    .bar { width: calc((100% - 42px) / 8); border-radius: 2px 2px 0 0; position: relative; animation: barUp 400ms ease-out forwards; transform-origin: bottom; transform: scaleY(0); cursor: crosshair; }
+    .bar:hover::after { content: attr(data-tooltip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #0D1A0D; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; padding: 8px 12px; white-space: pre-wrap; color: white; width: max-content; max-width: 250px; z-index: 50; }
+    @keyframes barUp { to { transform: scaleY(1); } }
+    .scan-item { padding: 12px; border: 1px solid rgba(0,255,65,0.2); font-family: var(--font-mono); font-size: 12px; cursor: pointer; transition: 0.2s; border-radius: 4px; }
+    .scan-item:hover { background: rgba(0,255,65,0.1); border-color: var(--fg); }
+    .scan-item .prompt-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 4px 0; color: white; }
+    .banners { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 100; pointer-events: none; }
+    .banner { padding: 8px 16px; font-family: var(--font-mono); font-size: 13px; font-weight: bold; border-radius: 4px; display: none; }
+    .banner.active { display: block; pointer-events: auto; }
+    .banner.red { background: var(--red); color: white; border: 1px solid #7F1D1D; }
+    .banner.amber { background: var(--amber); color: black; border: 1px solid #92400E; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">SECUREPROMPT</div>
+    <div class="api-status">
+      <div id="thr-val"></div>
+      <div class="status-text" id="status-txt">CONNECTING...</div>
+      <div class="dot" id="status-dot"></div>
+    </div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      <div class="sidebar-title">RECENT TARGETS</div>
+      <div id="recent-scans-list"></div>
+    </aside>
+    <section class="left-panel">
+      <div class="banners" id="banners"></div>
+      <textarea id="prompt-input" placeholder=">> Input target vector sequence..." spellcheck="false"></textarea>
+      <div class="char-counter" id="char-counter">0 / 2000</div>
+      <button id="analyze-btn" disabled>AWAITING CONNECTION</button>
+    </section>
+    <section class="right-panel">
+      <div class="scan-line" id="scan-line"></div>
+      <div class="state active" id="state-idle"><div style="font-family: var(--font-head); color: var(--fg-muted); font-size: 24px; opacity: 0.5;">[ AWAITING TARGET ]</div></div>
+      <div class="state" id="state-loading"><div style="font-family: var(--font-head); font-size: 24px; animation: pulse 1s infinite;">ANALYZING THREAT VECTOR...</div></div>
+      <div class="state" id="state-success">
+        <div class="verdict-header" id="verdict"></div>
+        <div class="metrics-container">
+          <div class="metric-card"><div class="metric-val" id="val-conf"></div><div class="metric-lbl">Confidence</div></div>
+          <div class="metric-card"><div class="metric-val" id="val-flag" style="margin-bottom: 2px;"></div><div class="metric-lbl" style="font-size: 9px; line-height: 1.2;" id="sub-flag"></div></div>
+          <div class="metric-card"><div class="metric-val" id="val-lat"></div><div class="metric-lbl">Latency</div></div>
+        </div>
+        <div style="width: 100%;"><div class="timeline-title">EVENT TIMELINE</div><div class="timeline-wrapper" id="timeline"></div></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const DEBUG = new URLSearchParams(location.search).has("debug");
+    const log = (...args) => DEBUG && console.log("[SecurePrompt]", ...args);
+    const DOM = {
+      statusText: document.getElementById("status-txt"), statusDot: document.getElementById("status-dot"), thrVal: document.getElementById("thr-val"), promptInput: document.getElementById("prompt-input"), charCounter: document.getElementById("char-counter"), analyzeBtn: document.getElementById("analyze-btn"), banners: document.getElementById("banners"), scanLine: document.getElementById("scan-line"), stateIdle: document.getElementById("state-idle"), stateLoading: document.getElementById("state-loading"), stateSuccess: document.getElementById("state-success"), verdict: document.getElementById("verdict"), valConf: document.getElementById("val-conf"), valFlag: document.getElementById("val-flag"), subFlag: document.getElementById("sub-flag"), valLat: document.getElementById("val-lat"), recentList: document.getElementById("recent-scans-list"), timeline: document.getElementById("timeline")
+    };
+    let recentScans = [], timelineData = [], lastHealthStatus = null, healthFailCount = 0;
+    const API = {
+      BASE_URL: "http://localhost:8000", TIMEOUT_MS: 10000,
+      async request(method, endpoint, body = null) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
+        try {
+          const u = this.BASE_URL + endpoint;
+          const res = await fetch(u, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined, signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.status === 429) return { error: "RATE_LIMITED" };
+          if (res.status === 422 || res.status === 400) return { error: "VALIDATION_ERROR", detail: await res.json().catch(()=>({})) };
+          if (!res.ok) return { error: "SERVER_ERROR", status: res.status };
+          return await res.json();
+        } catch (err) {
+          clearTimeout(timeoutId);
+          if (err.name === "AbortError") return { error: "TIMEOUT" };
+          return { error: "OFFLINE" };
+        }
+      },
+      async health() { return this.request("GET", "/health"); },
+      async analyze(prompt) { return this.request("POST", "/analyze", { prompt }); }
+    };
+    async function pollHealth() {
+      const res = await API.health();
+      const isOnline = res && !res.error && res.model_loaded === true;
+      if (isOnline !== lastHealthStatus) {
+        lastHealthStatus = isOnline;
+        if (isOnline) {
+          DOM.statusDot.className = "dot online"; DOM.statusText.textContent = "SYSTEM ONLINE"; DOM.thrVal.textContent = "THR: " + res.threshold; DOM.analyzeBtn.disabled = DOM.promptInput.value.length === 0 || DOM.promptInput.value.length > 2000;
+          if (DOM.analyzeBtn.textContent === "AWAITING CONNECTION") DOM.analyzeBtn.textContent = "ANALYZE PROMPT";
+          healthFailCount = 0;
+        } else {
+          DOM.statusDot.className = "dot"; DOM.statusText.textContent = "API OFFLINE"; DOM.thrVal.textContent = ""; DOM.analyzeBtn.disabled = true;
+          showBanner("Backend offline", "red", 0);
+        }
+      }
+      if (!isOnline) healthFailCount++;
+      const nextDelay = isOnline ? 30000 : (healthFailCount === 1 ? 5000 : (healthFailCount === 2 ? 10000 : 30000));
+      setTimeout(pollHealth, nextDelay);
+    }
+    function showBanner(msg, type, duration = 5000) {
+      const el = document.createElement("div"); el.className = "banner active " + type; el.textContent = msg; DOM.banners.appendChild(el);
+      if (duration > 0) setTimeout(() => el.remove(), duration);
+      return el;
+    }
+    function transitionState(state) {
+      DOM.stateIdle.classList.remove("active"); DOM.stateLoading.classList.remove("active"); DOM.stateSuccess.classList.remove("active"); DOM.scanLine.style.display = "none";
+      if (state === "IDLE") DOM.stateIdle.classList.add("active");
+      if (state === "LOADING") { DOM.stateLoading.classList.add("active"); DOM.scanLine.style.display = "block"; }
+      if (state === "SUCCESS") DOM.stateSuccess.classList.add("active");
+    }
+    DOM.promptInput.addEventListener("input", () => {
+      const len = DOM.promptInput.value.length; DOM.charCounter.textContent = len + " / 2000";
+      let color = "var(--fg-muted)";
+      if (len >= 1800) color = "var(--red)"; else if (len >= 1000) color = "var(--amber)";
+      DOM.charCounter.style.color = color; DOM.promptInput.style.borderColor = color;
+      DOM.charCounter.title = len === 2000 ? "Character limit reached" : "";
+      if (lastHealthStatus) DOM.analyzeBtn.disabled = len === 0 || len > 2000;
+    });
+    DOM.analyzeBtn.addEventListener("click", async () => {
+      const prompt = DOM.promptInput.value.trim();
+      if (!prompt) return showBanner("Enter a prompt", "amber");
+      if (prompt.length > 2000) return showBanner("Too long", "red");
+      if (!lastHealthStatus) return showBanner("API offline", "red");
+      DOM.analyzeBtn.disabled = true; DOM.analyzeBtn.textContent = "SCANNING..."; transitionState("LOADING");
+      const res = await API.analyze(prompt);
+      if (res.error) {
+        if (res.error === "RATE_LIMITED") {
+          const b = showBanner("Rate limited wait 60 seconds", "amber", 0); let sec = 60;
+          const iv = setInterval(() => { sec--; if (sec <= 0) { clearInterval(iv); b.remove(); } else b.textContent = "Rate limited wait " + sec + " seconds"; }, 1000);
+        } else if (res.error === "SERVER_ERROR") showBanner("Server error", "red");
+        else if (res.error === "TIMEOUT") showBanner("Request timed out", "red");
+        else if (res.error === "OFFLINE") showBanner("Connection refused", "red");
+        else showBanner("Validation error", "red");
+        DOM.analyzeBtn.disabled = false; DOM.analyzeBtn.textContent = "ANALYZE PROMPT"; transitionState("IDLE"); return;
+      }
+      renderVerdict(res); updateRecentScans(prompt, res); updateTimeline(prompt, res);
+      DOM.analyzeBtn.disabled = false; DOM.analyzeBtn.textContent = "ANALYZE PROMPT"; transitionState("SUCCESS");
+    });
+    function renderVerdict(res) {
+      DOM.verdict.textContent = res.verdict || res.action;
+      if (!DOM.verdict.textContent && res.label !== undefined) DOM.verdict.textContent = res.label === 1 ? "MALICIOUS" : "SAFE";
+      DOM.verdict.className = "verdict-header verdict-" + DOM.verdict.textContent.toLowerCase();
+      const pct = (res.confidence * 100).toFixed(1); DOM.valConf.textContent = pct + "%";
+      if (res.verdict === "SAFE") DOM.valConf.style.color = "var(--fg)";
+      else { if (res.confidence >= 0.90) DOM.valConf.style.color = "var(--red)"; else if (res.confidence >= 0.70) DOM.valConf.style.color = "var(--amber)"; else DOM.valConf.style.color = "var(--yellow)"; }
+      if (res.flagged_by === "regex") {
+        DOM.valFlag.innerHTML = "<span class='pill' style='background:var(--amber);'>⚡ REGEX INTERCEPT</span>";
+        DOM.subFlag.textContent = "Caught by prefilter — model bypassed";
+      } else {
+        DOM.valFlag.innerHTML = "<span class='pill' style='background:var(--cyan);'>🧠 ML MODEL</span>";
+        DOM.subFlag.textContent = "Evaluated by DistilBERT v2";
+      }
+      DOM.valLat.textContent = res.inference_time_ms.toFixed(1) + "ms";
+      if (res.inference_time_ms < 50) DOM.valLat.style.color = "var(--fg)"; else if (res.inference_time_ms <= 200) DOM.valLat.style.color = "var(--amber)"; else DOM.valLat.style.color = "var(--red)";
+    }
+    function updateRecentScans(prompt, res) {
+      recentScans.unshift({ prompt, verdict: res.verdict || (res.label===1?"MALICIOUS":"SAFE"), confidence: res.confidence, flagged_by: res.flagged_by, timestamp: new Date() });
+      if (recentScans.length > 5) recentScans.pop();
+      DOM.recentList.innerHTML = "";
+      recentScans.forEach(scan => {
+        const el = document.createElement("div"); el.className = "scan-item";
+        const short = scan.prompt.length > 38 ? scan.prompt.substring(0,35) + "..." : scan.prompt;
+        const timeAgo = Math.floor((new Date() - scan.timestamp) / 1000);
+        const col = scan.verdict === "SAFE" ? "var(--fg)" : "var(--red)";
+        el.innerHTML = "<div style='display:flex;justify-content:space-between;'><span style='color:"+col+";font-weight:bold;'>["+scan.verdict+"]</span><span style='color:var(--fg-muted);'>"+timeAgo+"s ago</span></div><div class='prompt-preview'>"+short+"</div>";
+        el.onclick = () => { DOM.promptInput.value = scan.prompt; DOM.promptInput.dispatchEvent(new Event("input")); };
+        DOM.recentList.appendChild(el);
+      });
+    }
+    function updateTimeline(prompt, res) {
+      const v = res.verdict || (res.label===1?"MALICIOUS":"SAFE");
+      timelineData.push({ confidence: res.confidence, verdict: v, prompt });
+      if (timelineData.length > 8) timelineData.shift();
+      DOM.timeline.innerHTML = ""; const MAX_H = 80;
+      timelineData.forEach((item, idx) => {
+        const bar = document.createElement("div"); bar.className = "bar";
+        const h = Math.max(8, item.confidence * MAX_H); bar.style.height = h + "px"; bar.style.background = item.verdict === "SAFE" ? "var(--fg)" : "var(--red)"; bar.style.animationDelay = (idx * 40) + "ms";
+        const short = item.prompt.length > 25 ? item.prompt.substring(0,25) + "..." : item.prompt; const pct = (item.confidence * 100).toFixed(1);
+        bar.setAttribute("data-tooltip", item.verdict + " • " + pct + "%\\n" + short); DOM.timeline.appendChild(bar);
+      });
+    }
+    pollHealth();
+  </script>
+</body>
+</html>"""
+
+with open(r'D:\PROJECT\mini\SecurePrompt-Core\web_ui\index.html', 'w', encoding='utf-8') as f:
+    f.write(content)
+print("SUCCESS!")
