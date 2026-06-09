@@ -4,7 +4,7 @@ import re
 
 # Regex patterns derived from training phase
 SYS_LEAK = re.compile(
-    r"(system\s+prompt|you\s+are\s+now|always\s+say|<\|im_start\|>|<\|endoftext\|>)", 
+    r"(system\s+prompt|you\s+are\s+now|always\s+say|<\|im_start\|>|<\|endoftext\|>|ignore\s+previous\s+instructions)", 
     re.IGNORECASE
 )
 BASE64_OBFUSCATION = re.compile(r"(?:[A-Za-z0-9+/]{4}){10,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")

@@ -23,3 +23,14 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     device: str
     threshold: float
+
+class ExplainRequest(BaseModel):
+    """Pydantic model for explanation requests."""
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    ml_metadata: dict
+
+class ExplainResponse(BaseModel):
+    """Pydantic model for explanation response."""
+    explanation: str
+    attack_type: str
+    risk_level: str

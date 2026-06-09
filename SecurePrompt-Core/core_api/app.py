@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 
 from .model_loader import load_all_artifacts
 from .ensemble_inference import run_ensemble_inference
-from .schemas import PromptRequest, InferenceResponse, HealthResponse
+from .schemas import PromptRequest, InferenceResponse, HealthResponse, ExplainRequest, ExplainResponse
 from .config import DEVICE, THRESHOLD, API_RATE_LIMIT
 from .middleware import limiter, LoggingAndLengthMiddleware, logger as mw_logger
 
@@ -91,3 +91,11 @@ async def analyze_prompt(request: Request, body: PromptRequest):
     )
     
     return InferenceResponse(**result)
+
+@app.post("/explain", response_model=ExplainResponse)
+@limiter.limit(API_RATE_LIMIT)
+async def explain_decision(request: Request, body: ExplainRequest):
+    """Generate an explanation for a prompt classification."""
+    from .explainer import generate_explanation
+    explanation_data = await generate_explanation(body.prompt, body.ml_metadata)
+    return ExplainResponse(**explanation_data)

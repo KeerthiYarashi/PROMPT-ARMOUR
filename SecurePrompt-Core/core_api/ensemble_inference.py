@@ -60,7 +60,8 @@ def extract_features(prompt: str) -> dict:
     injection_phrases = [
         "ignore previous", "forget your", "you are now dan",
         "system override", "no restrictions on", "do anything now",
-        "bypass", "jailbreak"
+        "bypass", "jailbreak", "override safety", "new directive",
+        "maintenance check"
     ]
     injection_phrase_count = sum(1 for phrase in injection_phrases if phrase in prompt_lower)
     
@@ -71,6 +72,9 @@ def extract_features(prompt: str) -> dict:
     if has_person_name: safe_score += 0.25
     if "please evaluate" in prompt_lower or "analyze" in prompt_lower: safe_score += 0.25
     
+    authority_pattern = r"\[(?:system|admin|root|developer|anthropic|god_mode)\]|\*\*[a-z-]+\*\*"
+    has_authority = bool(re.search(authority_pattern, prompt_lower))
+
     return {
         "char_count": int(char_count),
         "word_count": int(word_count),
@@ -83,7 +87,8 @@ def extract_features(prompt: str) -> dict:
         "has_url": bool(has_url),
         "base64_ratio": float(base64_ratio),
         "injection_phrase_count": int(injection_phrase_count),
-        "safe_context_score": float(safe_score)
+        "safe_context_score": float(safe_score),
+        "has_authority_escalation": has_authority
     }
 
 def run_distilbert(prompt: str) -> float:
@@ -94,6 +99,18 @@ def run_distilbert(prompt: str) -> float:
         return float(probs[:, 1].item())
 
 def run_ensemble_inference(prompt: str) -> dict:
+    from .prefilter import check_regex_prefilter
+    if check_regex_prefilter(prompt):
+        return {
+            "label": 1,
+            "confidence": 1.0,
+            "verdict": "MALICIOUS",
+            "method": "regex_prefilter",
+            "tfidf_score": 0.0,
+            "distilbert_score": 0.0,
+            "context_features": extract_features(prompt),
+            "flagged_by": "regex"
+        }
     feats = extract_features(prompt)
     
     if feats["has_code_keywords"] and not feats["injection_phrase_count"]:
@@ -122,15 +139,37 @@ def run_ensemble_inference(prompt: str) -> dict:
     vec = tfidf_vec.transform([prompt])
     tfidf_prob = float(tfidf_clf.predict_proba(vec)[0][1])
     
+    try:
+        import numpy as np
+        feature_names = tfidf_vec.get_feature_names_out()
+        contributions = vec.multiply(tfidf_clf.coef_).toarray()[0]
+        top_indices = np.argsort(contributions)[-3:][::-1]
+        shap_top_features = {}
+        for idx in top_indices:
+            if contributions[idx] > 0:
+                shap_top_features[feature_names[idx]] = float(contributions[idx])
+        bottom_idx = np.argsort(contributions)[0]
+        if contributions[bottom_idx] < 0:
+            shap_top_features[feature_names[bottom_idx]] = float(contributions[bottom_idx])
+        feats["shap_top_features"] = shap_top_features
+    except Exception:
+        feats["shap_top_features"] = {}
+    
     distilbert_prob = run_distilbert(prompt)
     
     if feats["injection_phrase_count"] > 0:
         final_score = 0.3 * tfidf_prob + 0.7 * distilbert_prob
+        # Boost if model misses explicit injection phrases
+        if final_score < threshold:
+            final_score = threshold + 0.05
     elif feats["has_code_keywords"] or feats["has_person_name"]:
         final_score = 0.5 * tfidf_prob + 0.5 * distilbert_prob
         final_score = final_score * 0.7
     else:
         final_score = 0.4 * tfidf_prob + 0.6 * distilbert_prob
+        
+    if feats.get("has_authority_escalation"):
+        final_score = max(final_score, 0.85)
         
     label = 1 if final_score >= threshold else 0
     verdict = "MALICIOUS" if label == 1 else "SAFE"
